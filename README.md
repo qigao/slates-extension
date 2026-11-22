@@ -24,13 +24,12 @@ Click the gear on a project row to **Generate Ninja Files** for its active
 preset and toolchain. This runs `slate gen` and writes `build.ninja` and
 `compile_commands.json` without compiling. Output appears in **Slate Build**.
 
-For the Windows bootstrap built in `out/bootstrap`, this workspace setting
-can point VS Code to the executable in this checkout.
+To use a particular Slate installation, set `slate.executable` to the path of
+the CLI in the archive's `bin/` directory on the workspace host.
 
 ```json
 {
-  "slate.executable": "${workspaceFolder}/out/bootstrap/slate.exe",
-  "slate.compiler": "llvm-mingw"
+  "slate.executable": "C:/tools/slate/bin/slate.exe"
 }
 ```
 
