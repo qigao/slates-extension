@@ -15,7 +15,8 @@ and builds the selected target before starting it.
 
 1. Build or install [Slate](https://github.com/qigao/slates-build). Make that `slate` executable
    available on `PATH`, or set `slate.executable` in VS Code settings.
-2. Install the extension VSIX using **Extensions → Install from VSIX…**.
+2. Download the VSIX from [GitHub Releases](https://github.com/qigao/slates-extension/releases)
+   and install it using **Extensions → Install from VSIX…**.
 3. Open a trusted workspace folder containing `slate.json`. Select the
    **Slate** icon in the Activity Bar to open **Slate Targets**.
 
@@ -71,9 +72,13 @@ To run the same checks and package the VSIX locally, use Node.js 24.
 
 ```sh
 node --test
-npx --yes @vscode/vsce@4.1.1 package --no-dependencies --skip-license --out slate-vscode.vsix
+npx --yes @vscode/vsce@4.1.1 package --no-dependencies --out .
 ```
 
 To develop from source, open a VS Code Extension Development Host with
 `code --extensionDevelopmentPath=<absolute-path-to-this-repository>` and a
 Slate workspace. The extension has no runtime npm dependencies.
+
+## License
+
+[Apache License 2.0](LICENSE).

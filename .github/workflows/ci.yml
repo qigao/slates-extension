@@ -35,9 +35,9 @@ jobs:
         with:
           node-version: '24'
       - name: Package VSIX
-        run: npx --yes @vscode/vsce@4.1.1 package --no-dependencies --skip-license --out slate-vscode.vsix
+        run: npx --yes @vscode/vsce@4.1.1 package --no-dependencies --out .
       - uses: actions/upload-artifact@v4
         with:
           name: slate-vscode
-          path: slate-vscode.vsix
+          path: '*.vsix'
           if-no-files-found: error
