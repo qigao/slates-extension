@@ -2,7 +2,7 @@
   "name": "slates-extension",
   "displayName": "Slate Build",
   "description": "Generate Ninja files and browse, build, test, and run Slate targets.",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "license": "Apache-2.0",
   "publisher": "slates-build",
   "repository": { "type": "git", "url": "https://github.com/qigao/slates-extension.git" },
@@ -39,6 +39,7 @@
     "commands": [
       { "command": "slate.refreshTargets", "title": "Refresh Targets", "category": "Slate", "icon": "$(refresh)" },
       { "command": "slate.generate", "title": "Generate Ninja Files", "category": "Slate", "icon": "$(gear)" },
+      { "command": "slate.selectPreset", "title": "Select Preset", "category": "Slate", "icon": "$(list-selection)" },
       { "command": "slate.buildTarget", "title": "Build Target", "category": "Slate", "icon": "$(tools)" },
       { "command": "slate.testTarget", "title": "Test Target", "category": "Slate", "icon": "$(beaker)" },
       { "command": "slate.runTarget", "title": "Run Executable", "category": "Slate", "icon": "$(play)" },
@@ -50,6 +51,7 @@
       }],
       "view/item/context": [
         { "command": "slate.generate", "when": "view == slate.targets && viewItem == slateProject", "group": "inline@1" },
+        { "command": "slate.selectPreset", "when": "view == slate.targets && viewItem =~ /^slateProject/", "group": "inline@2" },
         { "command": "slate.buildTarget", "when": "view == slate.targets && viewItem =~ /^slateTarget/", "group": "inline@1" },
         { "command": "slate.testTarget", "when": "view == slate.targets && viewItem == slateTargetTest", "group": "inline@2" },
         { "command": "slate.runTarget", "when": "view == slate.targets && viewItem == slateTargetRun", "group": "inline@2" }
@@ -64,7 +66,7 @@
         },
         "slate.preset": {
           "type": "string", "default": "", "scope": "resource",
-          "description": "Preset to use. Leave empty to use the project's default preset."
+          "description": "Preset to use when the Slate project has no selection. Leave empty to use the project default."
         },
         "slate.platform": {
           "type": "string", "default": "", "scope": "resource",

@@ -6,10 +6,13 @@ target to browse its sources, headers, and task files by directory for the
 active preset and toolchain. Project files start at the nearest shared directory
 with the target's manifest. Task outputs appear under **Generated** and can be
 opened after the task creates them.
+The tree includes test targets admitted by the active preset and toolchain,
+even if the preset leaves tests out of a regular build. Targets gated by a
+specific preset still require that preset.
 Click a file to open it, or click the target name to open its manifest.
-Use the target's inline **Build**, **Test**, or **Run** action. Test appears for
-declared host-runnable tests. Run appears for other host-runnable executables
-and builds the selected target before starting it.
+Use the target's inline **Build**, **Test**, or **Run** action. Build is
+available for libraries and fixtures. Test appears for declared host-runnable
+tests, including script tests. Run starts a host-runnable executable after building it.
 
 ## Use the extension
 
@@ -32,6 +35,12 @@ the CLI in the archive's `bin/` directory on the workspace host.
   "slate.executable": "C:/tools/slate/bin/slate.exe"
 }
 ```
+
+Click **Select Preset** next to the gear on the project row. The picker lists
+presets from `slate.json` and its included files. Selecting a preset refreshes
+the tree and applies it to Generate, Build, Test, and Run. The extension saves
+the selection per workspace folder. Choose **Use Configured Preset** to
+return to the workspace setting or the project default.
 
 Set `slate.preset`, `slate.platform`, `slate.compiler`, or
 `slate.buildDirectory` as needed. Leaving a selector empty lets Slate pick

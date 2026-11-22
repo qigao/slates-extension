@@ -3,7 +3,7 @@
 const { execFile, spawn } = require('node:child_process');
 const path = require('node:path');
 const { createInterface } = require('node:readline');
-const { promisify } = require('node:util');
+const { promisify, TextDecoder } = require('node:util');
 const vscode = require('vscode');
 
 const execute = promisify(execFile);
@@ -19,7 +19,7 @@ function fileKey(file) {
   return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
 }
 
-function projectSettings(folder) {
+function projectSettings(folder, selectedPreset) {
   const config = vscode.workspace.getConfiguration('slate', folder.uri);
   const root = folder.uri.fsPath;
   const expand = value => value.replaceAll('${workspaceFolder}', root);
@@ -27,6 +27,7 @@ function projectSettings(folder) {
   if (program.includes('/') || program.includes('\\')) {
     program = path.resolve(root, program);
   }
+  const preset = expand(selectedPreset ?? config.get('preset', ''));
   const selectors = ['--root', root];
   for (const [key, flag] of [
     ['preset', '--preset'],
@@ -34,10 +35,101 @@ function projectSettings(folder) {
     ['compiler', '--compiler'],
     ['buildDirectory', '--build-dir'],
   ]) {
-    const value = config.get(key, '');
-    if (value) selectors.push(flag, expand(value));
+    const value = key === 'preset' ? preset : expand(config.get(key, ''));
+    if (value) selectors.push(flag, value);
   }
-  return { program, selectors };
+  return { program, selectors, preset };
+}
+
+function parsePresetFragment(bytes) {
+  const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  const uncommented = text.replace(/"(?:[^"\\]|\\.)*"|\/\/[^\r\n]*|\/\*[\s\S]*?\*\//g,
+    token => token.startsWith('"') ? token : ' ');
+  return JSON.parse(uncommented.replace(/"(?:[^"\\]|\\.)*"|,(?=\s*[}\]])/g,
+    token => token.startsWith('"') ? token : ''));
+}
+
+async function readPresets(folder) {
+  const root = folder.uri.fsPath;
+  const presets = new Map();
+  const loading = new Set();
+  const loaded = new Set();
+  let defaultPreset;
+  async function load(file) {
+    const relative = path.relative(root, file);
+    if (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) {
+      throw new Error('Preset include escapes the project: ' + file);
+    }
+    const key = fileKey(file);
+    if (loading.has(key)) throw new Error('Preset include cycle: ' + file);
+    if (loaded.has(key)) return;
+    loading.add(key);
+    const fragment = parsePresetFragment(await vscode.workspace.fs.readFile(vscode.Uri.file(file)));
+    const includes = fragment.include ?? [];
+    if (!Array.isArray(includes) || !includes.every(entry => typeof entry === 'string')) {
+      throw new Error('Expected a list of preset includes in ' + file);
+    }
+    for (const entry of includes) await load(path.resolve(path.dirname(file), entry));
+    if (fragment.defaultPreset !== undefined) {
+      if (defaultPreset !== undefined) throw new Error('Duplicate defaultPreset in ' + file);
+      defaultPreset = fragment.defaultPreset;
+    }
+    for (const [name, preset] of Object.entries(fragment.presets ?? {})) {
+      if (presets.has(name)) throw new Error('Duplicate preset in ' + file + ': ' + name);
+      presets.set(name, preset);
+    }
+    loading.delete(key);
+    loaded.add(key);
+  }
+  await load(path.join(root, 'slate.json'));
+
+  function configFor(name) {
+    const visited = new Set();
+    let config;
+    for (let current = name; current !== undefined;) {
+      const preset = presets.get(current);
+      if (!preset || visited.has(current) || visited.size >= 128) return undefined;
+      visited.add(current);
+      if (config === undefined) config = preset.config;
+      current = preset.inherits;
+    }
+    return typeof config === 'string' && config !== '.' && config !== '..' && /^[\w.-]+$/.test(config)
+      ? config : undefined;
+  }
+  const choices = [...presets.keys()].sort((a, b) => a.localeCompare(b))
+    .map(name => ({ name, config: configFor(name) })).filter(preset => preset.config);
+  return { defaultPreset, choices };
+}
+
+function presetStateKey(projectId) {
+  return 'slate.selectedPreset:' + projectId;
+}
+
+async function selectPreset(tree, refresh, item) {
+  if (!vscode.workspace.isTrusted) return;
+  const project = item
+    ? tree.projects.find(candidate => candidate.id === item.id)
+    : tree.projects.length === 1 ? tree.projects[0] : (await vscode.window.showQuickPick(
+      tree.projects.map(project => ({ label: project.label, description: project.folder.uri.fsPath, project })),
+      { placeHolder: 'Select a Slate project' }))?.project;
+  if (!project) return;
+  const { defaultPreset, choices } = await readPresets(project.folder);
+  const configured = projectSettings(project.folder).preset || defaultPreset;
+  const state = tree.workspaceState;
+  const key = presetStateKey(project.id);
+  const override = state.get(key);
+  const items = [
+    { label: 'Use Configured Preset', description: [configured, override === undefined && 'Active'].filter(Boolean).join(' · ') },
+    ...choices.map(({ name, config }) => ({
+      label: name,
+      description: [config !== name && config, name === override && 'Active'].filter(Boolean).join(' · '),
+      preset: name,
+    })),
+  ];
+  const selected = await vscode.window.showQuickPick(items, { placeHolder: 'Select the Slate preset for ' + project.label });
+  if (!selected || selected.preset === override) return;
+  await state.update(key, selected.preset);
+  await refresh();
 }
 
 function childFolder(parent, folders, id, label) {
@@ -125,13 +217,16 @@ function readGraph(stdout) {
 }
 
 function canExecute(action, node) {
-  return action === 'build' || (action === 'test' && node.target.test) ||
-    (action === 'run' && node.target.runnable && !node.target.test);
+  if (action === 'build') return true;
+  const { kind, runnable, test } = node.target;
+  if (action === 'test') return runnable && test && (kind === 'executable' || kind === 'header_only');
+  return action === 'run' && kind === 'executable' && runnable && !test;
 }
 
 class TargetTree {
-  constructor(output) {
+  constructor(output, workspaceState) {
     this.output = output;
+    this.workspaceState = workspaceState;
     this.projects = [];
     this.revision = 0;
     this.changed = new vscode.EventEmitter();
@@ -157,27 +252,38 @@ class TargetTree {
       return this.projectError(project, error);
     }
     try {
-      project.settings = projectSettings(folder);
+      project.settings = projectSettings(folder, this.workspaceState.get(presetStateKey(id)));
       const { program, selectors } = project.settings;
-      const { stdout } = await execute(program, ['graph', '--format', 'json', ...selectors], {
-        cwd: folder.uri.fsPath,
-        encoding: 'utf8',
-        maxBuffer: 16 * 1024 * 1024,
-        windowsHide: true,
-      });
-      project.graph = readGraph(stdout);
+      const queryGraph = async flags => {
+        const { stdout } = await execute(program, ['graph', '--format', 'json', ...flags, ...selectors], {
+          cwd: folder.uri.fsPath,
+          encoding: 'utf8',
+          maxBuffer: 16 * 1024 * 1024,
+          windowsHide: true,
+        });
+        return readGraph(stdout);
+      };
+      let testError;
+      try {
+        project.graph = await queryGraph(['--tests']);
+        project.includesTests = true;
+      } catch (error) {
+        testError = error;
+        project.graph = await queryGraph([]);
+      }
       for (const input of project.graph.inputs) project.inputs.add(fileKey(input));
       buildTree(project, project.graph.targets);
+      if (testError) this.projectError(project, testError, 'Unable to load Slate tests');
     } catch (error) {
       return this.projectError(project, error);
     }
     return project;
   }
 
-  projectError(project, error) {
+  projectError(project, error, label = 'Unable to load Slate targets') {
     const detail = error.stderr?.trim() || error.message;
     this.output.appendLine(`[${project.label}] ${detail}`);
-    project.children.push({ id: `${project.id}:error`, label: 'Unable to load Slate targets', error: detail });
+    project.children.push({ id: `${project.id}:error`, label, error: detail });
     return project;
   }
 
@@ -204,9 +310,11 @@ class TargetTree {
     const item = new vscode.TreeItem(node.label, state);
     item.id = node.id;
     if (node.target) {
-      const { kind, manifest, runnable, test } = node.target;
-      item.contextValue = test ? 'slateTargetTest' : runnable ? 'slateTargetRun' : 'slateTargetBuild';
-      item.iconPath = new vscode.ThemeIcon(test ? 'beaker' : runnable ? 'file-code' : 'package');
+      const { kind, manifest } = node.target;
+      const testable = canExecute('test', node);
+      const runnable = canExecute('run', node);
+      item.contextValue = testable ? 'slateTargetTest' : runnable ? 'slateTargetRun' : 'slateTargetBuild';
+      item.iconPath = new vscode.ThemeIcon(testable ? 'beaker' : runnable ? 'file-code' : 'package');
       item.description = kind;
       item.tooltip = manifest;
       item.command = { command: 'vscode.open', title: 'Open module manifest', arguments: [vscode.Uri.file(manifest)] };
@@ -220,10 +328,12 @@ class TargetTree {
       item.command = { command: 'slate.showOutput', title: 'Show Slate output' };
     } else {
       item.iconPath = vscode.ThemeIcon.Folder;
+      if (node.folder) item.contextValue = node.graph ? 'slateProject' : 'slateProjectUnavailable';
       if (node.graph) {
-        item.contextValue = 'slateProject';
         item.description = `${node.graph.preset} · ${node.graph.platform} · ${node.graph.compiler}`;
         item.tooltip = node.graph.buildDirectory;
+      } else if (node.settings?.preset) {
+        item.description = node.settings.preset;
       }
     }
     return item;
@@ -300,6 +410,7 @@ async function executeAction(tree, active, output, diagnostics, action, item) {
     throw new Error(`Slate task '${running.title}' is still active in ${graph.buildDirectory}.`);
   }
   const args = [action, ...settings.selectors];
+  if (action === 'build' && node.project.includesTests) args.push('--tests');
   if (node.target) args.push('--target', node.target.name);
   const title = `${actions[action]} ${node.label}`;
   const cwd = folder.uri.fsPath;
@@ -352,7 +463,7 @@ function activate(context) {
   const output = vscode.window.createOutputChannel('Slate');
   const buildOutput = vscode.window.createOutputChannel('Slate Build', 'slate-log');
   const runOutput = vscode.window.createOutputChannel('Slate Run', 'slate-log');
-  const tree = new TargetTree(output);
+  const tree = new TargetTree(output, context.workspaceState);
   const active = new Map();
   const diagnostics = new Map();
   const view = vscode.window.createTreeView('slate.targets', { treeDataProvider: tree });
@@ -367,6 +478,15 @@ function activate(context) {
     });
   } },
     vscode.commands.registerCommand('slate.refreshTargets', refresh),
+    vscode.commands.registerCommand('slate.selectPreset', async item => {
+      try {
+        await selectPreset(tree, refresh, item);
+      } catch (error) {
+        const message = 'Slate Select Preset: ' + error.message;
+        output.appendLine(message);
+        void vscode.window.showErrorMessage(message);
+      }
+    }),
     vscode.commands.registerCommand('slate.showOutput', () => output.show()),
     vscode.workspace.onDidChangeWorkspaceFolders(refresh),
     vscode.workspace.onDidChangeConfiguration(event => {
