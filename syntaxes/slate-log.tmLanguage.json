@@ -1,0 +1,45 @@
+{
+  "name": "Slate Log",
+  "scopeName": "text.slate-log",
+  "patterns": [
+    {
+      "name": "markup.deleted.slate-log",
+      "match": "^\\[Slate\\].*\\b(?:failed|cancelled)\\b|^(?:FAIL\\b|FAILED:|slate:)|\\b(?:fatal error|error)(?: [A-Z]+[0-9]+)?:"
+    },
+    {
+      "name": "markup.changed.slate-log",
+      "match": "\\bwarning(?: [A-Z]+[0-9]+)?:"
+    },
+    {
+      "name": "markup.inserted.slate-log",
+      "match": "^\\[Slate\\].*\\bsucceeded\\b|^PASS\\b"
+    },
+    {
+      "name": "keyword.control.slate-log",
+      "match": "^\\[Slate\\]|^RUN\\b|^\\[[0-9]+/[0-9]+\\]"
+    },
+    {
+      "name": "markup.inserted.tinytest.slate-log",
+      "match": "^[ \\t]*\\[\\s*(?:OK|XFAIL)\\s*\\]|(?<=^Total tests )\\[PASSED\\]:[ \\t]*[0-9]+|^All tests passed in [0-9.]+ sec\\.$"
+    },
+    {
+      "name": "markup.deleted.tinytest.slate-log",
+      "match": "^[ \\t]*\\[\\s*FAIL\\s*\\]|(?<=^Total tests )\\[FAILED\\]:[ \\t]*[0-9]+"
+    },
+    {
+      "name": "token.warn-token.tinytest.slate-log",
+      "match": "^[ \\t]*\\[\\s*UPASS\\s*\\]|(?<=^Total tests )\\[(?:WARNED|SKIPPED|FILTERED)\\]:[ \\t]*[0-9]+"
+    },
+    {
+      "name": "markup.bold.tinytest.slate-log",
+      "match": "(?<=^Total tests )\\[TODO\\]:[ \\t]*[0-9]+"
+    },
+    {
+      "match": "^Assertions: ([0-9]+ passed), (?:([1-9][0-9]* failed)|0 failed)$",
+      "captures": {
+        "1": { "name": "markup.inserted.tinytest.slate-log" },
+        "2": { "name": "markup.deleted.tinytest.slate-log" }
+      }
+    }
+  ]
+}

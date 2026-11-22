@@ -1,0 +1,43 @@
+name: Extension CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tree and CLI contract (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025, ubuntu-24.04, ubuntu-24.04-arm, macos-15]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node --check extension.js
+      - run: node --test
+
+  package:
+    runs-on: ubuntu-24.04
+    needs: test
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Package VSIX
+        run: npx --yes @vscode/vsce@4.1.1 package --no-dependencies --skip-license --out slate-vscode.vsix
+      - uses: actions/upload-artifact@v4
+        with:
+          name: slate-vscode
+          path: slate-vscode.vsix
+          if-no-files-found: error

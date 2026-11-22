@@ -1,0 +1,88 @@
+{
+  "name": "slate",
+  "displayName": "Slate Build",
+  "description": "Generate Ninja files and browse, build, test, and run Slate targets.",
+  "version": "0.1.13",
+  "publisher": "slate-build",
+  "repository": { "type": "git", "url": "https://github.com/qigao/slates-extension.git" },
+  "bugs": { "url": "https://github.com/qigao/slates-extension/issues" },
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Other"],
+  "main": "./extension.js",
+  "extensionKind": ["workspace"],
+  "activationEvents": ["onView:slate.targets", "workspaceContains:slate.json"],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "Slate resolves the project's toolchain and runs workspace build commands."
+    },
+    "virtualWorkspaces": false
+  },
+  "contributes": {
+    "languages": [{ "id": "slate-log" }],
+    "grammars": [{
+      "language": "slate-log",
+      "scopeName": "text.slate-log",
+      "path": "./syntaxes/slate-log.tmLanguage.json"
+    }],
+    "viewsContainers": {
+      "activitybar": [{ "id": "slate-build", "title": "Slate", "icon": "media/slate-activity.svg" }]
+    },
+    "views": {
+      "slate-build": [{ "id": "slate.targets", "name": "Slate Targets" }]
+    },
+    "viewsWelcome": [{
+      "view": "slate.targets",
+      "contents": "Open a folder containing slate.json to list its targets.\n[Refresh Targets](command:slate.refreshTargets)"
+    }],
+    "commands": [
+      { "command": "slate.refreshTargets", "title": "Refresh Targets", "category": "Slate", "icon": "$(refresh)" },
+      { "command": "slate.generate", "title": "Generate Ninja Files", "category": "Slate", "icon": "$(gear)" },
+      { "command": "slate.buildTarget", "title": "Build Target", "category": "Slate", "icon": "$(tools)" },
+      { "command": "slate.testTarget", "title": "Test Target", "category": "Slate", "icon": "$(beaker)" },
+      { "command": "slate.runTarget", "title": "Run Executable", "category": "Slate", "icon": "$(play)" },
+      { "command": "slate.showOutput", "title": "Show Output", "category": "Slate" }
+    ],
+    "menus": {
+      "view/title": [{
+        "command": "slate.refreshTargets", "when": "view == slate.targets", "group": "navigation"
+      }],
+      "view/item/context": [
+        { "command": "slate.generate", "when": "view == slate.targets && viewItem == slateProject", "group": "inline@1" },
+        { "command": "slate.buildTarget", "when": "view == slate.targets && viewItem =~ /^slateTarget/", "group": "inline@1" },
+        { "command": "slate.testTarget", "when": "view == slate.targets && viewItem == slateTargetTest", "group": "inline@2" },
+        { "command": "slate.runTarget", "when": "view == slate.targets && viewItem == slateTargetRun", "group": "inline@2" }
+      ]
+    },
+    "configuration": {
+      "title": "Slate",
+      "properties": {
+        "slate.executable": {
+          "type": "string", "default": "slate", "scope": "resource",
+          "description": "Slate program on PATH or a path to the Slate executable. Relative paths use the workspace folder."
+        },
+        "slate.preset": {
+          "type": "string", "default": "", "scope": "resource",
+          "description": "Preset to use. Leave empty to use the project's default preset."
+        },
+        "slate.platform": {
+          "type": "string", "default": "", "scope": "resource",
+          "description": "Platform to select. Leave empty for Slate's normal platform selection."
+        },
+        "slate.compiler": {
+          "type": "string", "default": "", "scope": "resource",
+          "description": "Compiler driver to select. Leave empty for Slate's normal toolchain selection."
+        },
+        "slate.buildDirectory": {
+          "type": "string", "default": "", "scope": "resource",
+          "description": "Custom build directory. Leave empty to use Slate's resolved build directory."
+        },
+        "slate.runArguments": {
+          "type": "object", "default": {}, "scope": "resource",
+          "additionalProperties": { "type": "array", "items": { "type": "string" } },
+          "description": "Argument arrays keyed by executable target name. Used by Run Executable."
+        }
+      }
+    }
+  }
+}
