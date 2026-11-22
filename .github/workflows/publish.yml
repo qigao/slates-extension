@@ -6,7 +6,7 @@ on:
       tag:
         description: Published GitHub release tag
         required: true
-        default: v0.1.14
+        default: v0.1.15
         type: string
 
 permissions: {}
