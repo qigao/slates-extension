@@ -22,10 +22,11 @@ function fileKey(file) {
 function projectSettings(folder, selectedPreset) {
   const config = vscode.workspace.getConfiguration('slate', folder.uri);
   const root = folder.uri.fsPath;
-  const expand = value => value.replaceAll('${workspaceFolder}', root);
+  const workspace = folder.workspaceFolder?.uri.fsPath ?? root;
+  const expand = value => value.replaceAll('${workspaceFolder}', workspace).replaceAll('${projectRoot}', root);
   let program = expand(config.get('executable', 'slate'));
   if (program.includes('/') || program.includes('\\')) {
-    program = path.resolve(root, program);
+    program = path.resolve(workspace, program);
   }
   const preset = expand(selectedPreset ?? config.get('preset', ''));
   const selectors = ['--root', root];
@@ -219,8 +220,30 @@ function readGraph(stdout) {
 function canExecute(action, node) {
   if (action === 'build') return true;
   const { kind, runnable, test } = node.target;
-  if (action === 'test') return runnable && test && (kind === 'executable' || kind === 'header_only');
-  return action === 'run' && kind === 'executable' && runnable && !test;
+  const executable = kind === 'executable' || kind === 'exec';
+  if (action === 'test') return runnable && test && (executable || kind === 'header_only');
+  return action === 'run' && executable && runnable && !test;
+}
+
+async function findProjectFolders() {
+  const folders = vscode.workspace.workspaceFolders ?? [];
+  const projects = new Map(folders.map(folder => [fileKey(folder.uri.fsPath), folder]));
+  const matches = await Promise.all(folders.map(async workspaceFolder => {
+    const manifests = await vscode.workspace.findFiles(
+      new vscode.RelativePattern(workspaceFolder, '**/slate.json'),
+      '**/{.git,node_modules,out,build,target}/**');
+    return manifests.map(manifest => ({ manifest, workspaceFolder }));
+  }));
+  for (const { manifest, workspaceFolder } of matches.flat()) {
+    const directory = path.dirname(manifest.fsPath);
+    const key = fileKey(directory);
+    const owner = vscode.workspace.getWorkspaceFolder(manifest) ?? workspaceFolder;
+    const projectPath = path.relative(owner.uri.fsPath, directory).split(path.sep).join('/');
+    if (!projects.has(key)) {
+      projects.set(key, { uri: vscode.Uri.file(directory), name: projectPath, workspaceFolder: owner, projectPath });
+    }
+  }
+  return [...projects.values()];
 }
 
 class TargetTree {
@@ -290,7 +313,9 @@ class TargetTree {
   async refresh() {
     if (!vscode.workspace.isTrusted) return;
     const revision = ++this.revision;
-    const projects = await Promise.all((vscode.workspace.workspaceFolders || []).map(folder => this.readProject(folder)));
+    const folders = await findProjectFolders();
+    if (revision !== this.revision) return;
+    const projects = await Promise.all(folders.map(folder => this.readProject(folder)));
     if (revision !== this.revision) return;
     this.projects = projects.filter(Boolean);
     this.changed.fire();
@@ -416,7 +441,10 @@ async function executeAction(tree, active, output, diagnostics, action, item) {
   const cwd = folder.uri.fsPath;
   if (action === 'run') {
     const runArguments = vscode.workspace.getConfiguration('slate', folder.uri).get('runArguments', {});
-    const values = Object.hasOwn(runArguments, node.target.name) ? runArguments[node.target.name] : [];
+    const target = node.target.name;
+    const scopedTarget = folder.projectPath ? `${folder.projectPath}/${target}` : target;
+    const key = Object.hasOwn(runArguments, scopedTarget) ? scopedTarget : target;
+    const values = Object.hasOwn(runArguments, key) ? runArguments[key] : [];
     if (!Array.isArray(values) || !values.every(value => typeof value === 'string')) {
       throw new Error(`slate.runArguments for ${node.target.name} must be an array of strings.`);
     }
@@ -467,7 +495,14 @@ function activate(context) {
   const active = new Map();
   const diagnostics = new Map();
   const view = vscode.window.createTreeView('slate.targets', { treeDataProvider: tree });
-  const refresh = () => vscode.window.withProgress({ location: { viewId: 'slate.targets' } }, () => tree.refresh());
+  const refresh = () => vscode.window.withProgress({ location: { viewId: 'slate.targets' } }, async () => {
+    try {
+      await tree.refresh();
+    } catch (error) {
+      output.appendLine(`Unable to discover Slate projects: ${error.message}`);
+    }
+  });
+  const manifests = vscode.workspace.createFileSystemWatcher('**/slate.json', false, true, false);
   context.subscriptions.push(output, tree, view, { dispose() {
     const pending = [...active.values()];
     for (const launch of pending) launch.cancel();
@@ -488,15 +523,14 @@ function activate(context) {
       }
     }),
     vscode.commands.registerCommand('slate.showOutput', () => output.show()),
-    vscode.workspace.onDidChangeWorkspaceFolders(refresh),
+    vscode.workspace.onDidChangeWorkspaceFolders(refresh), manifests,
+    manifests.onDidCreate(refresh), manifests.onDidDelete(refresh),
     vscode.workspace.onDidChangeConfiguration(event => {
       if (event.affectsConfiguration('slate')) void refresh();
     }),
     vscode.workspace.onDidSaveTextDocument(document => {
-      const folder = vscode.workspace.getWorkspaceFolder(document.uri);
-      if (!folder) return;
       const key = fileKey(document.uri.fsPath);
-      if (key === fileKey(path.join(folder.uri.fsPath, 'slate.json')) ||
+      if ((path.basename(key) === 'slate.json' && vscode.workspace.getWorkspaceFolder(document.uri)) ||
           tree.projects.some(project => project.inputs.has(key))) void refresh();
     }));
   for (const [action, label] of Object.entries(actions)) {

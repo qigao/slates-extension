@@ -2,7 +2,7 @@
   "name": "slates-extension",
   "displayName": "Slate Build",
   "description": "Generate Ninja files and browse, build, test, and run Slate targets.",
-  "version": "0.1.17",
+  "version": "0.1.18",
   "license": "Apache-2.0",
   "publisher": "slates-build",
   "repository": { "type": "git", "url": "https://github.com/qigao/slates-extension.git" },
@@ -11,7 +11,7 @@
   "categories": ["Other"],
   "main": "./extension.js",
   "extensionKind": ["workspace"],
-  "activationEvents": ["onView:slate.targets", "workspaceContains:slate.json"],
+  "activationEvents": ["onView:slate.targets", "workspaceContains:**/slate.json"],
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": false,
@@ -83,7 +83,7 @@
         "slate.runArguments": {
           "type": "object", "default": {}, "scope": "resource",
           "additionalProperties": { "type": "array", "items": { "type": "string" } },
-          "description": "Argument arrays keyed by executable target name. Used by Run Executable."
+          "description": "Argument arrays keyed by target name or by workspace-relative project path and target name, such as apps/hello. Used by Run Executable."
         }
       }
     }

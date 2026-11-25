@@ -1,7 +1,9 @@
 # Slate Build for VS Code
 
-**Slate Targets** in the Slate sidebar shows the targets from each workspace folder
-that contains `slate.json`. The tree follows the module directories. Expand a
+**Slate Targets** in the Slate sidebar finds `slate.json` in workspace folders
+and their subdirectories. Each project has its own target tree, preset, and
+build root, even when two projects use the same target name. The tree follows
+the module directories. Expand a
 target to browse its sources, headers, and task files by directory for the
 active preset and toolchain. Project files start at the nearest shared directory
 with the target's manifest. Task outputs appear under **Generated** and can be
@@ -10,6 +12,9 @@ The tree includes test targets admitted by the active preset and toolchain,
 even if the preset leaves tests out of a regular build. Targets gated by a
 specific preset still require that preset.
 Click a file to open it, or click the target name to open its manifest.
+Library targets loaded through `libraries` appear in the graph of each
+project that uses them. Slate groups libraries outside the project root
+under `external`. Saving a shared manifest in VS Code refreshes its projects.
 Use the target's inline **Build**, **Test**, or **Run** action. Build is
 available for libraries and fixtures. Test appears for declared host-runnable
 tests, including script tests. Run starts a host-runnable executable after building it.
@@ -20,7 +25,7 @@ tests, including script tests. Run starts a host-runnable executable after build
    available on `PATH`, or set `slate.executable` in VS Code settings.
 2. Download the VSIX from [GitHub Releases](https://github.com/qigao/slates-extension/releases)
    and install it using **Extensions → Install from VSIX…**.
-3. Open a trusted workspace folder containing `slate.json`. Select the
+3. Open a trusted workspace containing one or more Slate projects. Select the
    **Slate** icon in the Activity Bar to open **Slate Targets**.
 
 Click the gear on a project row to **Generate Ninja Files** for its active
@@ -39,7 +44,7 @@ the CLI in the archive's `bin/` directory on the workspace host.
 Click **Select Preset** next to the gear on the project row. The picker lists
 presets from `slate.json` and its included files. Selecting a preset refreshes
 the tree and applies it to Generate, Build, Test, and Run. The extension saves
-the selection per workspace folder. Choose **Use Configured Preset** to
+the selection per Slate project. Choose **Use Configured Preset** to
 return to the workspace setting or the project default.
 
 Set `slate.preset`, `slate.platform`, `slate.compiler`, or
@@ -58,6 +63,23 @@ Run arguments can be supplied per target.
   }
 }
 ```
+
+Prefix a target with the project path relative to its workspace folder to
+override its arguments. For example, after starting the local server in the
+[HTTP walkthrough](https://qigao.github.io/slates-build/examples.html#make-an-http-request),
+open the Slate repository and use these settings to run its `apps` example.
+
+```json
+{
+  "slate.runArguments": {
+    "apps/hello": ["tcp://127.0.0.1:8000", "127.0.0.1:8000", "/hello.c"]
+  }
+}
+```
+
+Use a Slate CLI that supports `libraries` to load the HTTP example. In path
+settings, `${workspaceFolder}` refers to the opened folder and `${projectRoot}`
+refers to the selected Slate project.
 
 Build and Test stream logs and results to **Output → Slate Build**.
 **Run Executable** builds the target if needed, then streams its output to

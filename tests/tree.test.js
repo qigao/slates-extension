@@ -77,10 +77,15 @@ test('loads the Slate graph and supports target actions and project preset selec
       constructor(label, collapsibleState) { Object.assign(this, { label, collapsibleState }); }
     },
     ThemeIcon: class { static Folder = 'folder'; },
+    RelativePattern: class {
+      constructor(base, pattern) { Object.assign(this, { base, pattern }); }
+    },
     Uri: { file: uri, joinPath: (root, file) => uri(path.join(root.fsPath, file)) },
     workspace: {
       isTrusted: true,
       workspaceFolders: [workspaceFolder],
+      findFiles: async () => [],
+      getWorkspaceFolder: () => workspaceFolder,
       fs: {
         stat: async () => ({ type: 1 }),
         readFile: async ({ fsPath }) => Buffer.from(manifests.get(path.relative(workspace, fsPath))),
@@ -202,4 +207,46 @@ test('loads the Slate graph and supports target actions and project preset selec
   pickLabel = 'Use Configured Preset';
   await exports.selectPreset(tree, refresh, failedProject);
   assert.equal(tree.getTreeItem(tree.projects[0]).description, 'debug · native · clang');
+
+  const nestedRoots = ['fetch', 'health-check'].map(name => path.join(workspace, 'apps', name));
+  const sharedManifest = path.join(workspace, 'libs', 'http.json');
+  vscode.workspace.findFiles = async pattern => {
+    assert.equal(pattern.base, workspaceFolder);
+    assert.equal(pattern.pattern, '**/slate.json');
+    return [workspace, ...nestedRoots, nestedRoots[0]].map(root => uri(path.join(root, 'slate.json')));
+  };
+  vscode.workspace.getConfiguration = () => ({ get: (key, fallback) => key === 'runArguments' ? {
+    'apps/fetch/hello': ['tcp://127.0.0.1:8000', '127.0.0.1:8000', '/hello.c'],
+    hello: ['argument with spaces'],
+  } : fallback });
+  execFile[promisify.custom] = async (_program, args, { cwd }) => {
+    assert.deepEqual([...args], ['graph', '--format', 'json', '--tests', '--root', cwd]);
+    return { stdout: JSON.stringify({ ...graph,
+      buildDirectory: path.join(cwd, 'out'), inputs: [sharedManifest],
+      targets: [
+        target('hello', '', { kind: 'exec', runnable: true, manifest: path.join(cwd, 'module.json') }),
+        target('salts_cnet', 'external', { kind: 'prebuilt', manifest: sharedManifest }),
+      ],
+    }) };
+  };
+  // Recreate the consumer so promisify sees the new project graphs.
+  vm.runInNewContext(code + `
+    exports.TargetTree = TargetTree;
+    exports.executeAction = executeAction;
+    streamAction = async (_program, args) => { launched.push([...args]); return 0; };
+  `, { exports, process, launched, AbortController, require: name => requires[name] ?? require(name) });
+  const nestedTree = new exports.TargetTree({ appendLine() {} }, workspaceState);
+  await nestedTree.refresh();
+  assert.deepEqual(Array.from(nestedTree.projects, node => node.label), ['project', 'apps/fetch', 'apps/health-check']);
+  for (const [index, root] of nestedRoots.entries()) {
+    const node = nestedTree.projects[index + 1];
+    const [hello, cnet] = node.targets;
+    assert.equal(nestedTree.getTreeItem(hello).contextValue, 'slateTargetRun');
+    assert.equal(nestedTree.getTreeItem(cnet).command.arguments[0].fsPath, sharedManifest);
+    assert.equal(child(child(node, 'external'), 'salts_cnet'), cnet);
+    assert.equal(node.inputs.size, 3);
+    await exports.executeAction(nestedTree, new Map(), actionOutput, diagnostics, 'run', hello);
+    const values = index === 0 ? ['tcp://127.0.0.1:8000', '127.0.0.1:8000', '/hello.c'] : ['argument with spaces'];
+    assert.deepEqual(Array.from(launched.at(-1)), ['run', '--root', root, '--target', 'hello', '--', ...values]);
+  }
 });
