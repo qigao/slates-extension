@@ -1,32 +1,44 @@
 # Slate Build for VS Code
 
-**Slate Targets** in the Slate sidebar finds `slate.json` in workspace folders
-and their subdirectories. Each project has its own target tree, preset, and
-build root, even when two projects use the same target name. The tree follows
-the module directories. Expand a
-target to browse its sources, headers, and task files by directory for the
-active preset and toolchain. Project files start at the nearest shared directory
+Browse, build, test, and run Slate targets from the VS Code sidebar.
+
+## Quick start
+
+1. Install [Slate Build from the Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=slates-build.slates-extension).
+   For a manual install, get the [VSIX](https://github.com/qigao/slates-extension/releases/latest)
+   and select **Extensions → Install from VSIX…**.
+2. Install [the Slate CLI](https://github.com/qigao/slates-build), Ninja, and
+   your project's compiler. Ensure `slate --version` works in a terminal, or
+   set `slate.executable` to the full path of the CLI in VS Code settings.
+3. Open the directory containing `slate.json` or a parent directory as a trusted workspace.
+   Click **Slate** in the Activity Bar to open **Slate Targets**.
+4. Expand a project and use **Select Preset** if needed. Next to a target, use
+   **Build Target**, **Test Target**, or **Run Executable**.
+
+Build and test logs appear in **Output → Slate Build**. Executable output
+appears in **Output → Slate Run**.
+
+## Browse projects and choose a preset
+
+Projects follow their directories inside the workspace. For example,
+`apps/fetch/slate.json` appears under **apps → fetch**. A directory containing
+its own `slate.json` is a project node and can also contain nested projects.
+Each project's **Targets** branch groups targets by their module directories.
+In a multi-root workspace, projects stay under their owning workspace folder.
+
+Each `slate.json` has its own target tree, preset, and build root, even when
+two projects use the same target name. Expand a target to browse its sources,
+headers, and task files. Project files start at the nearest shared directory
 with the target's manifest. Task outputs appear under **Generated** and can be
-opened after the task creates them.
-The tree includes test targets admitted by the active preset and toolchain,
-even if the preset leaves tests out of a regular build. Targets gated by a
-specific preset still require that preset.
-Click a file to open it, or click the target name to open its manifest.
-Library targets loaded through `libraries` appear in the graph of each
-project that uses them. Slate groups libraries outside the project root
-under `external`. Saving a shared manifest in VS Code refreshes its projects.
-Use the target's inline **Build**, **Test**, or **Run** action. Build is
-available for libraries and fixtures. Test appears for declared host-runnable
-tests, including script tests. Run starts a host-runnable executable after building it.
+opened after the task creates them. Click a target name to open its manifest.
 
-## Use the extension
+Library targets loaded through `libraries` appear in each project that uses
+them. Slate groups libraries outside the project root under `external`.
+Saving a shared manifest in VS Code refreshes its projects.
 
-1. Build or install [Slate](https://github.com/qigao/slates-build). Make that `slate` executable
-   available on `PATH`, or set `slate.executable` in VS Code settings.
-2. Download the VSIX from [GitHub Releases](https://github.com/qigao/slates-extension/releases)
-   and install it using **Extensions → Install from VSIX…**.
-3. Open a trusted workspace containing one or more Slate projects. Select the
-   **Slate** icon in the Activity Bar to open **Slate Targets**.
+The tree shows tests that the active preset and toolchain can admit, including
+script tests. **Test** appears for host-runnable tests and **Run** for
+host-runnable executables. Use a matching preset for targets gated by it.
 
 Click the gear on a project row to **Generate Ninja Files** for its active
 preset and toolchain. This runs `slate gen` and writes `build.ninja` and
@@ -53,6 +65,8 @@ its value. The project row shows the resolved preset, target platform, and
 compiler. Slate reads the project's `.env`. An MSVC preset can set `vsDevCmd`
 to `"${envPath:VSDEVCMD_BAT}"` to initialize the developer environment from VS
 Code. You can also start VS Code from the matching Visual Studio developer shell.
+
+## Pass arguments to a target
 
 Run arguments can be supplied per target.
 
@@ -81,13 +95,12 @@ Use a Slate CLI that supports `libraries` to load the HTTP example. In path
 settings, `${workspaceFolder}` refers to the opened folder and `${projectRoot}`
 refers to the selected Slate project.
 
-Build and Test stream logs and results to **Output → Slate Build**.
-**Run Executable** builds the target if needed, then streams its output to
-**Output → Slate Run**. Each new action resumes auto-scrolling. Use the Output
-toolbar's scroll lock to pause it while reading earlier lines. The editor
-theme highlights errors, warnings, and
-results, including TinyTest's case statuses and summary counts. Compiler
-diagnostics with source locations also appear in **Problems**.
+## Output and troubleshooting
+
+Each new action resumes auto-scrolling. Use the Output toolbar's scroll lock
+to pause it while reading earlier lines. The editor theme highlights errors,
+warnings, and results, including TinyTest's case statuses and summary counts.
+Compiler diagnostics with source locations also appear in **Problems**.
 Use the progress notification to cancel an action. Run `slate run` from a
 terminal for programs that need keyboard input. Use the view's refresh button
 after changing files externally.

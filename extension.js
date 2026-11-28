@@ -192,15 +192,53 @@ function addTargetFiles(node, workspace, buildDirectory) {
 }
 
 function buildTree(project, targets) {
+  if (!targets.length) return;
+  const branch = { id: `${project.id}:targets`, label: 'Targets', children: [] };
+  project.children.push(branch);
   const folders = new Map();
   for (const target of targets) {
-    const parent = folderNode(project, folders, target.folder.split('/').filter(Boolean));
+    const parent = folderNode(branch, folders, target.folder.split('/').filter(Boolean));
     const id = `${project.id}:target:${target.name}`;
     const node = { id, label: target.name, target, project, children: [] };
     addTargetFiles(node, project.folder.uri.fsPath, project.graph.buildDirectory);
     parent.children.push(node);
     project.targets.push(node);
   }
+}
+
+function buildWorkspaceTree(projects) {
+  const workspaces = new Map();
+  for (const project of projects) {
+    const owner = project.folder.workspaceFolder ?? project.folder;
+    const workspaceId = owner.uri.toString();
+    let workspace = workspaces.get(workspaceId);
+    if (!workspace) {
+      workspace = { id: `${workspaceId}:workspace`, label: owner.name, workspace: true, children: [], projects: [] };
+      workspaces.set(workspaceId, workspace);
+    }
+    workspace.projects.push(project);
+  }
+
+  const multipleWorkspaces = (vscode.workspace?.workspaceFolders?.length ?? workspaces.size) > 1;
+  const roots = [];
+  for (const workspace of workspaces.values()) {
+    const directories = new Map();
+    const projects = workspace.projects.slice().sort((left, right) =>
+      (left.folder.projectPath ?? '').split('/').filter(Boolean).length -
+      (right.folder.projectPath ?? '').split('/').filter(Boolean).length);
+    const root = projects.find(project => !project.folder.projectPath) ?? workspace;
+    for (const project of projects) {
+      if (project === root) continue;
+      const segments = (project.folder.projectPath ?? '').split('/').filter(Boolean);
+      project.treeLabel = segments.pop();
+      const parent = folderNode(root, directories, segments);
+      parent.children.push(project);
+      directories.set(`${root.id}:folder:/${project.folder.projectPath}`, project);
+    }
+    if (root === workspace && !multipleWorkspaces) roots.push(...workspace.children);
+    else roots.push(root);
+  }
+  return roots;
 }
 
 function readGraph(stdout) {
@@ -227,7 +265,8 @@ function canExecute(action, node) {
 
 async function findProjectFolders() {
   const folders = vscode.workspace.workspaceFolders ?? [];
-  const projects = new Map(folders.map(folder => [fileKey(folder.uri.fsPath), folder]));
+  const projects = new Map(folders.map(folder => [fileKey(folder.uri.fsPath),
+    { ...folder, workspaceFolder: folder, projectPath: '' }]));
   const matches = await Promise.all(folders.map(async workspaceFolder => {
     const manifests = await vscode.workspace.findFiles(
       new vscode.RelativePattern(workspaceFolder, '**/slate.json'),
@@ -251,6 +290,7 @@ class TargetTree {
     this.output = output;
     this.workspaceState = workspaceState;
     this.projects = [];
+    this.roots = [];
     this.revision = 0;
     this.changed = new vscode.EventEmitter();
     this.onDidChangeTreeData = this.changed.event;
@@ -318,21 +358,22 @@ class TargetTree {
     const projects = await Promise.all(folders.map(folder => this.readProject(folder)));
     if (revision !== this.revision) return;
     this.projects = projects.filter(Boolean);
+    this.roots = buildWorkspaceTree(this.projects);
     this.changed.fire();
   }
 
   getChildren(node) {
-    if (!node) return this.projects;
-    return (node.children || []).slice().sort((left, right) =>
+    return (node ? node.children || [] : this.roots).slice().sort((left, right) =>
       Number(Boolean(left.target || left.file)) - Number(Boolean(right.target || right.file)) ||
-      left.label.localeCompare(right.label));
+      (left.treeLabel ?? left.label).localeCompare(right.treeLabel ?? right.label));
   }
 
   getTreeItem(node) {
     const state = node.children?.length
-      ? node.folder ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed
+      ? node.workspace || (node.folder && !node.folder.projectPath)
+        ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed
       : vscode.TreeItemCollapsibleState.None;
-    const item = new vscode.TreeItem(node.label, state);
+    const item = new vscode.TreeItem(node.treeLabel ?? node.label, state);
     item.id = node.id;
     if (node.target) {
       const { kind, manifest } = node.target;

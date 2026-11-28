@@ -72,7 +72,7 @@ test('loads the Slate graph and supports target actions and project preset selec
       },
     },
     FileType: { File: 1 },
-    TreeItemCollapsibleState: { None: 0, Collapsed: 1 },
+    TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
     TreeItem: class {
       constructor(label, collapsibleState) { Object.assign(this, { label, collapsibleState }); }
     },
@@ -143,7 +143,7 @@ test('loads the Slate graph and supports target actions and project preset selec
   assert.equal(child(child(child(unicode, 'Generated'), 'unicode'), 'UnicodeData.txt').file, output);
   assert.equal(tree.getTreeItem(legacy).collapsibleState, 0);
   assert.equal(tree.getTreeItem(frameTest).contextValue, 'slateTargetTest');
-  const testFolder = child(child(project, 'media'), 'tests');
+  const testFolder = child(child(child(project, 'Targets'), 'media'), 'tests');
   assert.equal(testFolder.children.includes(frameTest), true);
   assert.deepEqual(Array.from(tree.getChildren(child(testFolder, 'fixtures'))), [frameData, framePlugin, frameStatic]);
   assert.equal(child(child(testFolder, 'scripts'), 'frame_script'), frameScript);
@@ -238,15 +238,70 @@ test('loads the Slate graph and supports target actions and project preset selec
   const nestedTree = new exports.TargetTree({ appendLine() {} }, workspaceState);
   await nestedTree.refresh();
   assert.deepEqual(Array.from(nestedTree.projects, node => node.label), ['project', 'apps/fetch', 'apps/health-check']);
+  assert.deepEqual(Array.from(nestedTree.getChildren()), [nestedTree.projects[0]]);
+  assert.equal(nestedTree.getTreeItem(nestedTree.projects[0]).collapsibleState, 2);
+  const apps = child(nestedTree.projects[0], 'apps');
+  assert.deepEqual(Array.from(nestedTree.getChildren(apps), node => nestedTree.getTreeItem(node).label),
+    ['fetch', 'health-check']);
+  assert.equal(nestedTree.getTreeItem(apps).contextValue, undefined);
   for (const [index, root] of nestedRoots.entries()) {
     const node = nestedTree.projects[index + 1];
+    assert.equal(nestedTree.getTreeItem(node).collapsibleState, 1);
     const [hello, cnet] = node.targets;
     assert.equal(nestedTree.getTreeItem(hello).contextValue, 'slateTargetRun');
     assert.equal(nestedTree.getTreeItem(cnet).command.arguments[0].fsPath, sharedManifest);
-    assert.equal(child(child(node, 'external'), 'salts_cnet'), cnet);
+    assert.equal(child(child(child(node, 'Targets'), 'external'), 'salts_cnet'), cnet);
     assert.equal(node.inputs.size, 3);
     await exports.executeAction(nestedTree, new Map(), actionOutput, diagnostics, 'run', hello);
     const values = index === 0 ? ['tcp://127.0.0.1:8000', '127.0.0.1:8000', '/hello.c'] : ['argument with spaces'];
     assert.deepEqual(Array.from(launched.at(-1)), ['run', '--root', root, '--target', 'hello', '--', ...values]);
   }
+  const directoryId = apps.id;
+  await nestedTree.refresh();
+  assert.equal(child(nestedTree.projects[0], 'apps').id, directoryId);
+  assert.equal(nestedTree.getChildren(child(nestedTree.projects[0], 'apps')).length, 2);
+});
+
+test('keeps project ancestors, directory branches and workspace roots distinct', () => {
+  const exports = {};
+  const vscode = {};
+  const code = readFileSync(path.join(__dirname, '..', 'extension.js'), 'utf8');
+  vm.runInNewContext(code + '\nexports.buildWorkspaceTree = buildWorkspaceTree;', {
+    exports, process, require: name => name === 'vscode' ? vscode : require(name),
+  });
+  const owner = { name: 'workspace', uri: uri(workspace) };
+  const project = (owner, projectPath) => ({
+    id: path.join(owner.uri.fsPath, projectPath), label: projectPath || owner.name,
+    folder: { uri: uri(path.join(owner.uri.fsPath, projectPath)), workspaceFolder: owner, projectPath },
+    children: [{ label: 'Targets', children: [] }],
+  });
+  const parent = project(owner, 'apps');
+  const client = project(owner, 'apps/client');
+  const demo = project(owner, 'apps/client/examples/demo');
+  const library = project(owner, 'libs/common');
+  const roots = exports.buildWorkspaceTree([demo, library, client, parent]);
+  assert.equal(roots.length, 2);
+  assert.equal(roots[0], parent);
+  assert.equal(parent.children[1], client);
+  assert.equal(client.children[1].label, 'examples');
+  assert.equal(client.children[1].children[0], demo);
+  assert.equal(roots[1].label, 'libs');
+  assert.equal(roots[1].children[0], library);
+  assert.equal(demo.treeLabel, 'demo');
+
+  const otherOwner = { name: 'other', uri: uri(path.resolve('another workspace')) };
+  const first = project(owner, 'apps/client');
+  const second = project(otherOwner, 'apps/client');
+  const workspaces = exports.buildWorkspaceTree([first, second]);
+  assert.deepEqual(Array.from(workspaces, node => node.label), ['workspace', 'other']);
+  assert.equal(workspaces[0].children[0].children[0], first);
+  assert.equal(workspaces[1].children[0].children[0], second);
+  assert.notEqual(workspaces[0].children[0].id, workspaces[1].children[0].id);
+
+  vscode.workspace = { workspaceFolders: [owner, otherOwner] };
+  const only = project(owner, 'apps/client');
+  const partial = exports.buildWorkspaceTree([only]);
+  assert.equal(partial.length, 1);
+  assert.equal(partial[0].label, 'workspace');
+  assert.equal(partial[0].children[0].children[0], only);
 });
