@@ -73,27 +73,28 @@ Run arguments can be supplied per target.
 ```json
 {
   "slate.runArguments": {
-    "my_tool": ["--input", "file with spaces.txt"]
+    "my_tool": ["--input", "default.txt"]
   }
 }
 ```
 
 Prefix a target with the project path relative to its workspace folder to
-override its arguments. For example, after starting the local server in the
-[HTTP walkthrough](https://qigao.github.io/slates-build/examples.html#make-an-http-request),
-open the Slate repository and use these settings to run its `apps` example.
+override its arguments. For `apps/fetch/slate.json`, this entry overrides the
+unscoped `my_tool` arguments above.
 
 ```json
 {
   "slate.runArguments": {
-    "apps/hello": ["tcp://127.0.0.1:8000", "127.0.0.1:8000", "/hello.c"]
+    "apps/fetch/my_tool": ["--input", "file with spaces.txt"]
   }
 }
 ```
 
-Use a Slate CLI that supports `libraries` to load the HTTP example. In path
-settings, `${workspaceFolder}` refers to the opened folder and `${projectRoot}`
-refers to the selected Slate project.
+In path settings, `${workspaceFolder}` refers to the opened folder and
+`${projectRoot}` refers to the selected Slate project. To run the repository's
+[SDK walkthrough](https://qigao.github.io/slates-build/examples.html#export-and-consume-an-sdk),
+install the SDK, expand **apps → consumer**, and run `stats-demo` with the
+matching toolchain preset. That program needs no run arguments.
 
 ## Output and troubleshooting
 
